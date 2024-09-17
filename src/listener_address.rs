@@ -52,8 +52,16 @@ pub enum ListenerAddress {
     ///
     /// Special name `*` means to bind all passed addresses simultaneously, if `multi-listener` crate feature is enabled.
     FromFdNamed(String),
-    /// Pair of CID and port
-    Vsock((u32, u32)),
+    /// The VSOCK address family facilitates communication between virtual machines and the host they are running on.
+    /// A socket address is defined as a combination of a 32-bit Context Identifier (CID) and a 32-bit port number.  The CID identifies
+    /// the source or destination, which is either a virtual machine or the host.
+    ///
+    /// [vsock manual]: https://www.man7.org/linux/man-pages/man7/vsock.7.html
+    /// (Implemented only on Linux and Darwin)
+    Vsock {
+        cid: u32,
+        port: u32,
+    },
 }
 
 pub(crate) const SD_LISTEN_FDS_START: i32 = 3;
@@ -86,7 +94,7 @@ impl FromStr for ListenerAddress {
             Ok(ListenerAddress::FromFdNamed(x.to_owned()))
         } else if let Some(vsock) = s.strip_prefix("vsock:") {
             if let Some((Ok(cid), Ok(port))) = vsock.split_once(":").map(|(cid, port)| (cid.parse(), port.parse()))  {
-                Ok(ListenerAddress::Vsock((cid, port)))
+                Ok(ListenerAddress::Vsock{ cid, port })
             } else {
                 Err("Invalid tokio-listener vsock: cid:port pair expected")
             }
@@ -129,7 +137,7 @@ impl Display for ListenerAddress {
             ListenerAddress::FromFdNamed(name) => {
                 write!(f, "sd-listen:{name}")
             }
-            ListenerAddress::Vsock((cid, port)) => {
+            ListenerAddress::Vsock{ cid, port } => {
                 write!(f, "vsock:{cid}:{port}")
             }
         }
@@ -166,6 +174,6 @@ pub(crate) fn check_env_for_fd(fdnum: i32) -> Option<()> {
 #[cfg(all(any(target_os = "linux", target_os = "android", target_os = "macos"), feature = "vsock"))]
 impl std::convert::From<tokio_vsock::VsockAddr> for ListenerAddress {
     fn from(vs: tokio_vsock::VsockAddr) -> Self {
-        ListenerAddress::Vsock((vs.cid(), vs.port()))
+        ListenerAddress::Vsock{ cid: vs.cid(), port: vs.port() }
     }
 }
